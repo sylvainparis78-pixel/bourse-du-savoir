@@ -446,7 +446,7 @@
           </div>
 
           <div style="margin: 6px 0;">
-            <strong>Équipes (<span id="animator-count-players">0</span>/6) :</strong>
+            <strong>Équipes (<span id="animator-count-players">0</span>/8) :</strong>
             <div id="animator-teams-board" class="bourse-table">En attente...</div>
           </div>
 
@@ -668,7 +668,16 @@
 
     db.ref(`bourse/${code}`).once('value').then(snap => {
       if (!snap.val()) { alert("Session introuvable."); return; }
-      document.getElementById('join-section').style.display = 'block';
+      
+      // Si une session existe et que le joueur est déjà enregistré dedans, on le reconnecte directement !
+      db.ref(`bourse/${code}/joueurs/${playerId}`).once('value').then(playerSnap => {
+        if (playerSnap.val()) {
+          listenToSession();
+          showScreen('screen-player');
+        } else {
+          document.getElementById('join-section').style.display = 'block';
+        }
+      });
     });
   }
 
@@ -678,24 +687,30 @@
 
     db.ref(`bourse/${currentSessionId}/joueurs`).transaction(joueurs => {
       joueurs = joueurs || {};
-      const count = Object.keys(joueurs).length;
-      if (!joueurs[playerId] && count >= 6) return;
       
-      joueurs[playerId] = {
-        name: name,
-        balance: 1000,
-        bet: 0,
-        hasBet: false,
-        hasAnswered: false,
-        insurance: false,
-        passedTurn: false,
-        lastDelta: 0,
-        isAllIn: false,
-        lastAnswerCorrect: false
-      };
+      // Si le joueur existe déjà (reconnexion avec le même ID), on met à jour son nom sans écraser son score/capital
+      if (joueurs[playerId]) {
+        joueurs[playerId].name = name;
+      } else {
+        const count = Object.keys(joueurs).length;
+        if (!joueurs[playerId] && count >= 8) return; // Limite portée à 8 joueurs
+        
+        joueurs[playerId] = {
+          name: name,
+          balance: 1000,
+          bet: 0,
+          hasBet: false,
+          hasAnswered: false,
+          insurance: false,
+          passedTurn: false,
+          lastDelta: 0,
+          isAllIn: false,
+          lastAnswerCorrect: false
+        };
+      }
       return joueurs;
     }, (err, committed) => {
-      if (!committed) { alert("Session complète (6 joueurs max) ou erreur !"); return; }
+      if (!committed) { alert("Session complète (8 joueurs max) ou erreur !"); return; }
       listenToSession();
       showScreen('screen-player');
     });
@@ -1071,7 +1086,6 @@
         if (showCorrect && q.explanation) {
           explContainer.innerHTML = `<div class="explanation-box">💡 <strong>Explication :</strong> ${q.explanation}</div>`;
           
-          // Vérification explicite : si un ALL-IN a été réussi, déclencher la pluie d'argent 3s
           if (!moneyRainTriggered) {
             let hasSuccessfulAllIn = entries.some(([_, j]) => j.isAllIn && j.lastAnswerCorrect === true);
             if (hasSuccessfulAllIn) {
