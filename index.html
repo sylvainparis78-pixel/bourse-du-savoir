@@ -63,7 +63,7 @@
     .card { background-color: #f9fbfd; border: 1px solid var(--gray); border-left: 4px solid var(--primary); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
     .form-group { margin-bottom: 10px; }
     label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
-    input[type="text"], input[type="file"], input[type="number"] { width: 100%; padding: 8px 10px; border: 1px solid var(--gray); border-radius: 8px; font-size: 0.9rem; outline: none; background: white; }
+    input[type="text"], input[type="file"], input[type="number"], select { width: 100%; padding: 8px 10px; border: 1px solid var(--gray); border-radius: 8px; font-size: 0.9rem; outline: none; background: white; }
 
     .btn { width: 100%; padding: 14px; background-color: var(--primary); color: var(--white); border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
     .btn:hover { opacity: 0.9; }
@@ -342,6 +342,27 @@
     }
     .radar-pill.ready { background: rgba(40, 167, 69, 0.2); border-color: var(--success); color: #86efac; }
 
+    .secondary-bets-log {
+      margin-top: 15px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #475569;
+      border-radius: 10px;
+      padding: 12px;
+      max-width: 750px;
+      width: 100%;
+      text-align: left;
+      z-index: 2;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+    .log-item {
+      font-size: 0.85rem;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      justify-content: space-between;
+    }
+
     .podium-container {
       display: flex;
       justify-content: center;
@@ -432,7 +453,7 @@
           <h2>Console Animateur</h2>
           
           <div style="background:#eef6fc; border:1px solid #bbdefb; border-radius:8px; padding:8px; margin:8px 0;">
-            <strong style="font-size:0.8rem; color:var(--primary);">⏱️ Durée des Chronomètres (0s = Illimité) :</strong>
+            <strong style="font-size:0.8rem; color:var(--primary);">⏱️ Paramètres & Options :</strong>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:4px;">
               <div>
                 <label style="font-size:0.75rem; margin-bottom:2px;">Enchères (s) :</label>
@@ -442,6 +463,11 @@
                 <label style="font-size:0.75rem; margin-bottom:2px;">Réponses (s) :</label>
                 <input type="number" id="animator-ans-timer-setting" value="0" min="0" style="padding:4px 6px;">
               </div>
+            </div>
+            <div style="margin-top: 8px;">
+              <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; cursor:pointer; color:var(--primary);">
+                <input type="checkbox" id="animator-secondary-bets-toggle"> Activer Paris Secondaires (Hausse/Baisse)
+              </label>
             </div>
           </div>
 
@@ -482,6 +508,12 @@
         
         <div class="teams-radar" id="animator-teams-radar"></div>
 
+        <!-- JOURNAL DES PARIS SECONDAIRES -->
+        <div id="animator-secondary-bets-box" style="display:none;" class="secondary-bets-log">
+          <div style="font-weight:bold; font-size:0.85rem; color:var(--accent); margin-bottom:4px;">📜 Journal des Paris Secondaires (Hausse / Baisse) :</div>
+          <div id="animator-secondary-bets-list">Aucun pari secondaire pour l'instant.</div>
+        </div>
+
         <div id="animator-answers-box" style="display:none; width:100%; max-width:750px; z-index:2;">
           <div class="answers-grid" id="animator-options-grid"></div>
           <div id="animator-explanation-container"></div>
@@ -520,7 +552,7 @@
       
       <div class="form-group">
         <label for="bet-amount-input">Montant de votre mise (0 = Passer le tour) :</label>
-        <input type="number" id="bet-amount-input" value="0" min="0" placeholder="Entrez un montant" style="text-align:center; font-weight:bold; font-size:1.2rem;" oninput="updateInsuranceLabel()">
+        <input type="number" id="bet-amount-input" value="0" min="0" placeholder="Entrez un montant" style="text-align:center; font-weight:bold; font-size:1.2rem;" oninput="onBetInputChanged()">
       </div>
 
       <div style="display:flex; gap:6px; margin-bottom:10px;">
@@ -535,6 +567,20 @@
           <input type="checkbox" id="insurance-checkbox" onchange="toggleInsurance()"> 
           🛡️ Assurance (20% = <span id="insurance-cost-preview">0</span> pts) : Limite la perte à 50% si erreur
         </label>
+      </div>
+
+      <!-- SECTION PARI SECONDAIRE (HAUSSE / BAISSE) -->
+      <div id="player-secondary-bet-container" style="display:none; background:#eef6fc; border:1px solid #90caf9; border-radius:8px; padding:8px; margin-bottom:10px;">
+        <strong style="font-size:0.8rem; color:var(--primary);">📈 Pari Secondaire (Coût: 50 pts, Gain: +100 pts) :</strong>
+        <div style="display:grid; grid-template-columns: 1.2fr 1fr; gap:6px; margin-top:6px;">
+          <select id="sec-target-select" style="font-size:0.8rem; padding:4px;">
+            <option value="">-- Cible --</option>
+          </select>
+          <select id="sec-type-select" style="font-size:0.8rem; padding:4px;">
+            <option value="up">🚀 Hausse (Réussite)</option>
+            <option value="down">⚓ Baisse (Échec)</option>
+          </select>
+        </div>
       </div>
 
       <button id="btn-validate-bet" class="btn btn-warning" onclick="submitBet(false)">Valider ma mise ➔</button>
@@ -604,10 +650,10 @@
   let isJokerUsedThisRound = false;
   let lastStartedBetQ = -1;
 
-  // Variables de contrôle de la bannière et pluie
   let isAllInBannerActive = false;
   let allInBannerTimeout = null;
   let moneyRainTriggered = false;
+  let secondaryBetsResolved = false;
 
   function showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -653,6 +699,8 @@
       showCorrectAnswer: false,
       betTimerDuration: 0,
       ansTimerDuration: 0,
+      allowSecondaryBets: false,
+      secondaryBets: {},
       joueurs: {}
     }).then(() => {
       listenToSession();
@@ -669,7 +717,6 @@
     db.ref(`bourse/${code}`).once('value').then(snap => {
       if (!snap.val()) { alert("Session introuvable."); return; }
       
-      // Si une session existe et que le joueur est déjà enregistré dedans, on le reconnecte directement !
       db.ref(`bourse/${code}/joueurs/${playerId}`).once('value').then(playerSnap => {
         if (playerSnap.val()) {
           listenToSession();
@@ -687,13 +734,11 @@
 
     db.ref(`bourse/${currentSessionId}/joueurs`).transaction(joueurs => {
       joueurs = joueurs || {};
-      
-      // Si le joueur existe déjà (reconnexion avec le même ID), on met à jour son nom sans écraser son score/capital
       if (joueurs[playerId]) {
         joueurs[playerId].name = name;
       } else {
         const count = Object.keys(joueurs).length;
-        if (!joueurs[playerId] && count >= 8) return; // Limite portée à 8 joueurs
+        if (!joueurs[playerId] && count >= 8) return;
         
         joueurs[playerId] = {
           name: name,
@@ -774,8 +819,10 @@
     const nextQ = qIdx + 1;
     const betTimerVal = parseInt(document.getElementById('animator-bet-timer-setting').value) || 0;
     const ansTimerVal = parseInt(document.getElementById('animator-ans-timer-setting').value) || 0;
+    const allowSecBets = document.getElementById('animator-secondary-bets-toggle').checked;
     
     moneyRainTriggered = false;
+    secondaryBetsResolved = false;
     hideAllInBanner();
 
     db.ref(`bourse/${currentSessionId}/joueurs`).once('value', snap => {
@@ -787,6 +834,8 @@
       updates[`showCorrectAnswer`] = false;
       updates[`betTimerDuration`] = betTimerVal;
       updates[`ansTimerDuration`] = ansTimerVal;
+      updates[`allowSecondaryBets`] = allowSecBets;
+      updates[`secondaryBets`] = null;
 
       Object.keys(joueurs).forEach(pKey => {
         updates[`joueurs/${pKey}/hasBet`] = false;
@@ -812,7 +861,67 @@
   }
 
   function animatorShowCorrectAnswer() {
+    resolveSecondaryBets();
     db.ref(`bourse/${currentSessionId}`).update({ showCorrectAnswer: true });
+  }
+
+  function resolveSecondaryBets() {
+    if (secondaryBetsResolved) return;
+    secondaryBetsResolved = true;
+
+    const secBets = sessionData.secondaryBets || {};
+    const joueurs = sessionData.joueurs || {};
+    const updates = {};
+
+    const currentBalances = {};
+    const currentDeltas = {};
+
+    Object.keys(joueurs).forEach(pId => {
+      currentBalances[pId] = joueurs[pId].balance || 0;
+      currentDeltas[pId] = joueurs[pId].lastDelta || 0;
+    });
+
+    let hasUpdates = false;
+
+    Object.entries(secBets).forEach(([bettorId, betInfo]) => {
+      const targetId = betInfo.targetId;
+      const betType = betInfo.type;
+      const bettor = joueurs[bettorId];
+      const target = joueurs[targetId];
+
+      if (!bettor || !target) return;
+
+      const targetSuccess = (target.lastAnswerCorrect === true);
+      let won = false;
+
+      if (betType === 'up' && targetSuccess) won = true;
+      if (betType === 'down' && !targetSuccess) won = true;
+
+      if (won) {
+        hasUpdates = true;
+
+        currentBalances[bettorId] += 100;
+        currentDeltas[bettorId] += 100;
+
+        const oldTargetBal = currentBalances[targetId];
+        const newTargetBal = Math.max(0, oldTargetBal - 100);
+        const actualLoss = oldTargetBal - newTargetBal;
+
+        currentBalances[targetId] = newTargetBal;
+        currentDeltas[targetId] -= actualLoss;
+      }
+    });
+
+    if (hasUpdates) {
+      Object.keys(currentBalances).forEach(pId => {
+        if (currentBalances[pId] !== joueurs[pId].balance) {
+          updates[`joueurs/${pId}/balance`] = currentBalances[pId];
+          updates[`joueurs/${pId}/lastDelta`] = currentDeltas[pId];
+        }
+      });
+
+      db.ref(`bourse/${currentSessionId}`).update(updates);
+    }
   }
 
   function animatorFinishGame() {
@@ -834,7 +943,6 @@
     });
   }
 
-  // DÉCLENCHEMENT / MASQUAGE DE LA BANNIÈRE ALL-IN
   function triggerAllInBanner() {
     const banner = document.getElementById('allin-banner');
     if (!banner) return;
@@ -856,7 +964,6 @@
     if (allInBannerTimeout) clearTimeout(allInBannerTimeout);
   }
 
-  // PLUIE D'ARGENT POUR 3 SECONDES SUR L'ÉCRAN ANIMATEUR
   function triggerMoneyRain() {
     const container = document.getElementById('animator-main-board');
     if (!container) return;
@@ -914,7 +1021,6 @@
     entries.forEach(([_, j]) => {
       if (j.bet) totalPot += j.bet;
       
-      // Bannière ALL-IN : uniquement activée pendant la phase d'enchères ('betting')
       if (sessionData.status === 'betting' && j.isAllIn) {
         triggerAllInBanner();
       }
@@ -929,6 +1035,28 @@
       if (j.isAllIn) text += " 🔥 ALL-IN";
       return `<div class="radar-pill ${isReady ? 'ready' : ''}">👥 ${text}</div>`;
     }).join('');
+
+    const secBetsBox = document.getElementById('animator-secondary-bets-box');
+    const secBetsList = document.getElementById('animator-secondary-bets-list');
+    const showCorrect = sessionData.showCorrectAnswer === true;
+
+    if (sessionData.allowSecondaryBets && !showCorrect) {
+      secBetsBox.style.display = 'block';
+      const secBets = sessionData.secondaryBets || {};
+      const secBetsArr = Object.values(secBets);
+
+      if (secBetsArr.length === 0) {
+        secBetsList.innerHTML = '<div style="color:#94a3b8; font-style:italic;">Aucun pari secondaire validé pour l\'instant.</div>';
+      } else {
+        secBetsList.innerHTML = secBetsArr.map(b => {
+          const typeIcon = b.type === 'up' ? '🚀 Hausse' : '⚓ Baisse';
+          const typeColor = b.type === 'up' ? '#4ade80' : '#f87171';
+          return `<div class="log-item"><span><strong>${b.bettorName}</strong> parie sur <strong>${b.targetName}</strong></span> <span style="color:${typeColor}; font-weight:bold;">${typeIcon}</span></div>`;
+        }).join('');
+      }
+    } else {
+      secBetsBox.style.display = 'none';
+    }
 
     const teamsBoard = document.getElementById('animator-teams-board');
     let currentRank = 1;
@@ -1072,7 +1200,6 @@
         document.getElementById('btn-reveal-question').style.display = 'none';
         document.getElementById('btn-reveal-correct').style.display = 'block';
 
-        const showCorrect = sessionData.showCorrectAnswer === true;
         const letters = ['A', 'B', 'C', 'D'];
         const grid = document.getElementById('animator-options-grid');
         grid.innerHTML = q.options.map((opt, idx) => `
@@ -1104,13 +1231,37 @@
 
   function addBet(amount) {
     const input = document.getElementById('bet-amount-input');
-    const balance = sessionData.joueurs[playerId].balance;
+    const balance = sessionData.joueurs[playerId] ? sessionData.joueurs[playerId].balance : 0;
     let current = parseInt(input.value) || 0;
 
     if (amount === 'all') current = balance;
     else current = Math.min(balance, Math.max(0, current + amount));
     input.value = current;
+    onBetInputChanged();
+  }
+
+  function onBetInputChanged() {
     updateInsuranceLabel();
+    const betInput = document.getElementById('bet-amount-input');
+    const secTargetSelect = document.getElementById('sec-target-select');
+    const secTypeSelect = document.getElementById('sec-type-select');
+    const balance = sessionData.joueurs[playerId] ? sessionData.joueurs[playerId].balance : 0;
+    const currentVal = parseInt(betInput.value) || 0;
+
+    if (secTargetSelect && secTypeSelect) {
+      if (currentVal >= balance && balance > 0) {
+        secTargetSelect.value = "";
+        secTargetSelect.disabled = true;
+        secTypeSelect.disabled = true;
+        secTargetSelect.style.opacity = "0.5";
+        secTypeSelect.style.opacity = "0.5";
+      } else {
+        secTargetSelect.disabled = false;
+        secTypeSelect.disabled = false;
+        secTargetSelect.style.opacity = "1";
+        secTypeSelect.style.opacity = "1";
+      }
+    }
   }
 
   function updateInsuranceLabel() {
@@ -1126,7 +1277,8 @@
   function submitBet(isTimeout) {
     if (timerInterval) clearInterval(timerInterval);
     
-    const balance = sessionData.joueurs[playerId].balance;
+    const player = sessionData.joueurs[playerId];
+    let balance = player.balance;
     let amount = parseInt(document.getElementById('bet-amount-input').value) || 0;
     
     if (isTimeout || amount <= 0) {
@@ -1142,16 +1294,42 @@
     }
 
     amount = Math.min(amount, balance);
-    const insuranceCost = insuranceSelected ? Math.round(amount * 0.20) : 0;
     const isAllIn = (amount === balance);
 
+    const insuranceCost = (insuranceSelected && !isAllIn) ? Math.round(amount * 0.20) : 0;
+    balance -= insuranceCost;
+
+    let secCost = 0;
+    const allowSec = sessionData.allowSecondaryBets;
+
+    if (allowSec && !isAllIn) {
+      const targetId = document.getElementById('sec-target-select').value;
+      const secType = document.getElementById('sec-type-select').value;
+      if (targetId && targetId !== playerId && balance >= 50) {
+        secCost = 50;
+        balance -= secCost;
+
+        const targetName = sessionData.joueurs[targetId] ? sessionData.joueurs[targetId].name : "Inconnu";
+        db.ref(`bourse/${currentSessionId}/secondaryBets/${playerId}`).set({
+          bettorId: playerId,
+          bettorName: player.name,
+          targetId: targetId,
+          targetName: targetName,
+          type: secType
+        });
+      }
+    }
+
+    let finalBet = isAllIn ? balance : amount;
+    if (isAllIn) balance = 0;
+
     db.ref(`bourse/${currentSessionId}/joueurs/${playerId}`).update({
-      balance: balance - insuranceCost,
-      bet: amount,
-      insurance: insuranceSelected,
+      balance: balance,
+      bet: finalBet,
+      insurance: isAllIn ? false : insuranceSelected,
       hasBet: true,
       passedTurn: false,
-      lastDelta: insuranceCost > 0 ? -insuranceCost : 0,
+      lastDelta: (insuranceCost + secCost) > 0 ? -(insuranceCost + secCost) : 0,
       isAllIn: isAllIn,
       lastAnswerCorrect: false
     });
@@ -1328,6 +1506,23 @@
       feedSec.style.display = 'none';
       qSec.style.display = 'none';
 
+      const secContainer = document.getElementById('player-secondary-bet-container');
+      if (sessionData.allowSecondaryBets) {
+        secContainer.style.display = 'block';
+        const targetSelect = document.getElementById('sec-target-select');
+        const allPlayers = sessionData.joueurs || {};
+        
+        let optionsHtml = '<option value="">-- Choisir une équipe cible --</option>';
+        Object.entries(allPlayers).forEach(([pKey, pVal]) => {
+          if (pKey !== playerId) {
+            optionsHtml += `<option value="${pKey}">${pVal.name}</option>`;
+          }
+        });
+        targetSelect.innerHTML = optionsHtml;
+      } else {
+        secContainer.style.display = 'none';
+      }
+
       if (player.hasBet) {
         betSec.style.display = 'none';
         waitSec.style.display = 'block';
@@ -1346,7 +1541,7 @@
         }
         document.getElementById('insurance-checkbox').checked = false;
         insuranceSelected = false;
-        updateInsuranceLabel();
+        onBetInputChanged();
 
         if (sessionData.betTimerDuration > 0) {
           startTimer(sessionData.betTimerDuration, () => {
