@@ -407,19 +407,17 @@
             📌 <span id="question-progress-label">Question 0 / 0</span>
           </div>
 
-          <div style="margin-top:6px; background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; padding:8px; font-size:0.8rem;">
+          <div style="margin-top:6px; background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; padding:8px; font-size:0.80rem;">
             <strong>Statut :</strong> <span id="game-status-label">En attente</span>
           </div>
         </div>
 
         <div>
-          <button id="btn-start-phase" class="btn btn-warning" onclick="animatorStartQuestion()">🚀 Lancer la Question</button>
+          <!-- BOUTON UNIQUE DYNAMIQUE -->
+          <button id="btn-dynamic-flow" class="btn btn-warning" onclick="animatorMainAction()">🚀 Lancer la Question</button>
           
-          <div id="animator-controls-step" style="display:none; flex-direction:column; gap:6px;">
-            <button id="btn-reveal-question" class="btn btn-info btn-small" onclick="animatorRevealAnswers()">🔍 Afficher la Question</button>
-            <button id="btn-reveal-correct" class="btn btn-success btn-small" onclick="animatorShowCorrectAnswer()" style="display:none;">👁️ Afficher la Bonne Réponse</button>
-            <button class="btn btn-secondary btn-small" onclick="animatorNextQuestion()">Question Suivante ➔</button>
-            <button class="btn btn-success btn-small" style="margin-top:4px;" onclick="animatorRefillBalances()">💉 Recharger chaque équipe (+100 pts)</button>
+          <div style="margin-top:6px;">
+            <button class="btn btn-success btn-small" style="width:100%;" onclick="animatorRefillBalances()">💉 Recharger chaque équipe (+100 pts)</button>
           </div>
         </div>
       </div>
@@ -692,53 +690,56 @@
     qTimer.innerText = txt;
   }
 
-  function animatorStartQuestion() {
-    const nextQ = (sessionData.currentQuestion === undefined ? -1 : sessionData.currentQuestion) + 1;
-    
-    if (nextQ >= QUESTIONS.length) { 
-      animatorFinishGame();
-      return; 
-    }
+  /* FONCTION UNIQUE DU BOUTON DYNAMIQUE ANIMATEUR */
+  function animatorMainAction() {
+    const qIdx = sessionData.currentQuestion === undefined ? -1 : sessionData.currentQuestion;
+    const status = sessionData.status;
+    const showCorrect = sessionData.showCorrectAnswer === true;
 
-    const betTimerVal = parseInt(document.getElementById('animator-bet-timer-setting').value) || 0;
-    const ansTimerVal = parseInt(document.getElementById('animator-ans-timer-setting').value) || 0;
+    if (status === 'waiting' || qIdx === -1 || (status === 'answering' && showCorrect)) {
+      // Étape suivante : Lancer une nouvelle question (ou recommencer si -1)
+      const nextQ = (qIdx === -1) ? 0 : qIdx + 1;
+      if (nextQ >= QUESTIONS.length) {
+        animatorFinishGame();
+        return;
+      }
 
-    db.ref(`bourse/${currentSessionId}/joueurs`).once('value', snap => {
-      const joueurs = snap.val() || {};
-      const updates = {};
+      const betTimerVal = parseInt(document.getElementById('animator-bet-timer-setting').value) || 0;
+      const ansTimerVal = parseInt(document.getElementById('animator-ans-timer-setting').value) || 0;
 
-      updates[`status`] = 'betting';
-      updates[`currentQuestion`] = nextQ;
-      updates[`showCorrectAnswer`] = false;
-      updates[`betTimerDuration`] = betTimerVal;
-      updates[`ansTimerDuration`] = ansTimerVal;
+      db.ref(`bourse/${currentSessionId}/joueurs`).once('value', snap => {
+        const joueurs = snap.val() || {};
+        const updates = {};
 
-      Object.keys(joueurs).forEach(pKey => {
-        updates[`joueurs/${pKey}/hasBet`] = false;
-        updates[`joueurs/${pKey}/bet`] = 0;
-        updates[`joueurs/${pKey}/hasAnswered`] = false;
-        updates[`joueurs/${pKey}/insurance`] = false;
-        updates[`joueurs/${pKey}/passedTurn`] = false;
-        updates[`joueurs/${pKey}/lastDelta`] = 0;
+        updates[`status`] = 'betting';
+        updates[`currentQuestion`] = nextQ;
+        updates[`showCorrectAnswer`] = false;
+        updates[`betTimerDuration`] = betTimerVal;
+        updates[`ansTimerDuration`] = ansTimerVal;
+
+        Object.keys(joueurs).forEach(pKey => {
+          updates[`joueurs/${pKey}/hasBet`] = false;
+          updates[`joueurs/${pKey}/bet`] = 0;
+          updates[`joueurs/${pKey}/hasAnswered`] = false;
+          updates[`joueurs/${pKey}/insurance`] = false;
+          updates[`joueurs/${pKey}/passedTurn`] = false;
+          updates[`joueurs/${pKey}/lastDelta`] = 0;
+        });
+        
+        db.ref(`bourse/${currentSessionId}`).update(updates);
       });
-      
-      db.ref(`bourse/${currentSessionId}`).update(updates);
-    });
-  }
 
-  function animatorRevealAnswers() {
-    db.ref(`bourse/${currentSessionId}`).update({
-      status: 'answering',
-      showCorrectAnswer: false
-    });
-  }
+    } else if (status === 'betting') {
+      // Passer à l'affichage de la question et des options sur l'écran principal
+      db.ref(`bourse/${currentSessionId}`).update({
+        status: 'answering',
+        showCorrectAnswer: false
+      });
 
-  function animatorShowCorrectAnswer() {
-    db.ref(`bourse/${currentSessionId}`).update({ showCorrectAnswer: true });
-  }
-
-  function animatorNextQuestion() {
-    animatorStartQuestion();
+    } else if (status === 'answering' && !showCorrect) {
+      // Afficher la bonne réponse
+      db.ref(`bourse/${currentSessionId}`).update({ showCorrectAnswer: true });
+    }
   }
 
   function animatorFinishGame() {
@@ -852,8 +853,37 @@
     const instruction = document.getElementById('animator-instruction');
     const ansBox = document.getElementById('animator-answers-box');
     const podiumBox = document.getElementById('animator-podium-box');
+    const dynamicBtn = document.getElementById('btn-dynamic-flow');
 
-    if (sessionData.status === 'finished') {
+    // Mise à jour de l'apparence et du texte du bouton unique de l'animateur
+    const status = sessionData.status;
+    const showCorrect = sessionData.showCorrectAnswer === true;
+
+    if (status === 'finished') {
+      dynamicBtn.style.display = 'none';
+    } else {
+      dynamicBtn.style.display = 'block';
+      if (status === 'waiting' || qIdx === -1) {
+        dynamicBtn.innerText = "🚀 Lancer la Question";
+        dynamicBtn.className = "btn btn-warning";
+      } else if (status === 'betting') {
+        dynamicBtn.innerText = "🔍 Afficher la Question";
+        dynamicBtn.className = "btn btn-info";
+      } else if (status === 'answering' && !showCorrect) {
+        dynamicBtn.innerText = "👁️ Afficher la Bonne Réponse";
+        dynamicBtn.className = "btn btn-success";
+      } else if (status === 'answering' && showCorrect) {
+        if (qIdx + 1 >= totalQ) {
+          dynamicBtn.innerText = "🏆 Afficher le Podium";
+          dynamicBtn.className = "btn btn-danger";
+        } else {
+          dynamicBtn.innerText = "➡️ Question Suivante";
+          dynamicBtn.className = "btn btn-warning";
+        }
+      }
+    }
+
+    if (status === 'finished') {
       themeTitle.style.display = 'none';
       instruction.style.display = 'none';
       radar.style.display = 'none';
@@ -901,14 +931,11 @@
 
     if (qIdx >= 0 && qIdx < totalQ) {
       const q = QUESTIONS[qIdx];
-      if (sessionData.status === 'betting') {
+      if (status === 'betting') {
         themeTitle.innerText = `Thème Boursier : ${q.theme || 'Général'}`;
         instruction.style.display = 'block';
         instruction.innerText = sessionData.betTimerDuration > 0 ? `Phase d'enchères (${sessionData.betTimerDuration}s) en cours...` : "Phase d'enchères en cours... Évaluez votre confiance !";
         ansBox.style.display = 'none';
-        document.getElementById('animator-controls-step').style.display = 'flex';
-        document.getElementById('btn-reveal-question').style.display = 'block';
-        document.getElementById('btn-reveal-correct').style.display = 'none';
 
         if (sessionData.betTimerDuration > 0 && lastStartedBetQ !== qIdx) {
           lastStartedBetQ = qIdx;
@@ -917,15 +944,11 @@
           startTimer(0, null);
         }
 
-      } else if (sessionData.status === 'answering') {
+      } else if (status === 'answering') {
         themeTitle.innerText = q.text;
         instruction.style.display = 'none';
         ansBox.style.display = 'block';
-        
-        document.getElementById('btn-reveal-question').style.display = 'none';
-        document.getElementById('btn-reveal-correct').style.display = 'block';
 
-        const showCorrect = sessionData.showCorrectAnswer === true;
         const letters = ['A', 'B', 'C', 'D'];
         const grid = document.getElementById('animator-options-grid');
         grid.innerHTML = q.options.map((opt, idx) => `
@@ -935,7 +958,6 @@
           </div>
         `).join('');
 
-        // Affichage de l'explication si la réponse est révélée
         const explContainer = document.getElementById('animator-explanation-container');
         if (showCorrect && q.explanation) {
           explContainer.innerHTML = `<div class="explanation-box">💡 <strong>Explication :</strong> ${q.explanation}</div>`;
