@@ -103,7 +103,6 @@
       box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     }
 
-    /* ANIMATIONS & EFFETS VISUELS */
     @keyframes gainPulse {
       0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
       50% { transform: scale(1.03); box-shadow: 0 0 15px 5px rgba(40, 167, 69, 0); }
@@ -130,7 +129,6 @@
     .row-gain-anim { animation: gainPulse 0.8s ease-in-out; border-color: var(--success) !important; background: #e8f5e9 !important; }
     .row-loss-anim { animation: lossShake 0.6s ease-in-out; border-color: var(--danger) !important; background: #ffebee !important; }
 
-    /* BANNIÈRE ALL-IN */
     .allin-banner {
       position: absolute;
       top: 20px;
@@ -150,7 +148,6 @@
       animation: allInPulse 0.6s ease-out infinite alternate;
     }
 
-    /* PLUIE DE BILLETS / ARGENT */
     .money-particle {
       position: absolute;
       top: -30px;
@@ -460,13 +457,9 @@
         </div>
 
         <div>
+          <!-- BOUTON D'ACTION UNIQUE FUSIONNÉ -->
           <button id="btn-dynamic-flow" class="btn btn-warning" onclick="animatorMainAction()">🚀 Lancer la Question</button>
-          
-          <div id="animator-controls-step" style="display:none; flex-direction:column; gap:6px;">
-            <button id="btn-reveal-question" class="btn btn-info btn-small" onclick="animatorRevealAnswers()">🔍 Afficher la Question</button>
-            <button id="btn-reveal-correct" class="btn btn-success btn-small" onclick="animatorShowCorrectAnswer()" style="display:none;">👁️ Afficher la Bonne Réponse</button>
-            <button class="btn btn-success btn-small" style="margin-top:4px;" onclick="animatorRefillBalances()">💉 Recharger chaque équipe (+100 pts)</button>
-          </div>
+          <button class="btn btn-success btn-small" style="margin-top:4px;" onclick="animatorRefillBalances()">💉 Recharger chaque équipe (+100 pts)</button>
         </div>
       </div>
 
@@ -602,9 +595,10 @@
   let currentRenderedQ = -1;
   let hiddenIndices = [];
   let isJokerUsedThisRound = false;
+  
   let lastStartedBetQ = -1;
+  let lastStartedAnsQ = -1;
 
-  // Variables de contrôle de la bannière et pluie
   let isAllInBannerActive = false;
   let allInBannerTimeout = null;
   let moneyRainTriggered = false;
@@ -669,7 +663,6 @@
     db.ref(`bourse/${code}`).once('value').then(snap => {
       if (!snap.val()) { alert("Session introuvable."); return; }
       
-      // Si une session existe et que le joueur est déjà enregistré dedans, on le reconnecte directement !
       db.ref(`bourse/${code}/joueurs/${playerId}`).once('value').then(playerSnap => {
         if (playerSnap.val()) {
           listenToSession();
@@ -688,12 +681,11 @@
     db.ref(`bourse/${currentSessionId}/joueurs`).transaction(joueurs => {
       joueurs = joueurs || {};
       
-      // Si le joueur existe déjà (reconnexion avec le même ID), on met à jour son nom sans écraser son score/capital
       if (joueurs[playerId]) {
         joueurs[playerId].name = name;
       } else {
         const count = Object.keys(joueurs).length;
-        if (!joueurs[playerId] && count >= 8) return; // Limite portée à 8 joueurs
+        if (!joueurs[playerId] && count >= 8) return;
         
         joueurs[playerId] = {
           name: name,
@@ -763,15 +755,40 @@
     qTimer.innerText = txt;
   }
 
+  // FONCTION D'ACTION PRINCIPALE FUSIONNÉE
   function animatorMainAction() {
     const qIdx = sessionData.currentQuestion === undefined ? -1 : sessionData.currentQuestion;
-    
-    if (qIdx + 1 >= QUESTIONS.length) {
-      animatorFinishGame();
+    const status = sessionData.status || 'waiting';
+
+    // 1. Si on est en attente du début de la partie
+    if (qIdx === -1 || status === 'waiting') {
+      startNextQuestion(0);
       return;
     }
 
-    const nextQ = qIdx + 1;
+    // 2. Si on est en phase de pari -> on révèle la question
+    if (status === 'betting') {
+      animatorRevealAnswers();
+      return;
+    }
+
+    // 3. Si on est en phase de réponse
+    if (status === 'answering') {
+      // Si la bonne réponse n'est pas encore affichée -> on l'affiche
+      if (!sessionData.showCorrectAnswer) {
+        animatorShowCorrectAnswer();
+      } else {
+        // Si la bonne réponse est déjà affichée -> on passe à la question suivante (ou fin de partie)
+        if (qIdx + 1 >= QUESTIONS.length) {
+          animatorFinishGame();
+        } else {
+          startNextQuestion(qIdx + 1);
+        }
+      }
+    }
+  }
+
+  function startNextQuestion(nextQ) {
     const betTimerVal = parseInt(document.getElementById('animator-bet-timer-setting').value) || 0;
     const ansTimerVal = parseInt(document.getElementById('animator-ans-timer-setting').value) || 0;
     
@@ -834,7 +851,6 @@
     });
   }
 
-  // DÉCLENCHEMENT / MASQUAGE DE LA BANNIÈRE ALL-IN
   function triggerAllInBanner() {
     const banner = document.getElementById('allin-banner');
     if (!banner) return;
@@ -856,7 +872,6 @@
     if (allInBannerTimeout) clearTimeout(allInBannerTimeout);
   }
 
-  // PLUIE D'ARGENT POUR 3 SECONDES SUR L'ÉCRAN ANIMATEUR
   function triggerMoneyRain() {
     const container = document.getElementById('animator-main-board');
     if (!container) return;
@@ -914,7 +929,6 @@
     entries.forEach(([_, j]) => {
       if (j.bet) totalPot += j.bet;
       
-      // Bannière ALL-IN : uniquement activée pendant la phase d'enchères ('betting')
       if (sessionData.status === 'betting' && j.isAllIn) {
         triggerAllInBanner();
       }
@@ -987,16 +1001,27 @@
     const ansBox = document.getElementById('animator-answers-box');
     const podiumBox = document.getElementById('animator-podium-box');
 
+    // MISE À JOUR DYNAMIQUE DU BOUTON UNIQUE
     const dynamicBtn = document.getElementById('btn-dynamic-flow');
-    if (qIdx === -1) {
+    const status = sessionData.status;
+
+    if (qIdx === -1 || status === 'waiting') {
       dynamicBtn.innerText = "🚀 Lancer la Question";
       dynamicBtn.className = "btn btn-warning";
-    } else if (qIdx + 1 >= totalQ) {
-      dynamicBtn.innerText = "🏆 Afficher le Podium";
-      dynamicBtn.className = "btn btn-danger";
-    } else {
-      dynamicBtn.innerText = "➡️ Question Suivante";
-      dynamicBtn.className = "btn btn-warning";
+    } else if (status === 'betting') {
+      dynamicBtn.innerText = "🔍 Afficher la Question";
+      dynamicBtn.className = "btn btn-info";
+    } else if (status === 'answering') {
+      if (!sessionData.showCorrectAnswer) {
+        dynamicBtn.innerText = "👁️ Afficher la Bonne Réponse";
+        dynamicBtn.className = "btn btn-success";
+      } else if (qIdx + 1 >= totalQ) {
+        dynamicBtn.innerText = "🏆 Afficher le Podium";
+        dynamicBtn.className = "btn btn-danger";
+      } else {
+        dynamicBtn.innerText = "➡️ Question Suivante";
+        dynamicBtn.className = "btn btn-warning";
+      }
     }
 
     if (sessionData.status === 'finished') {
@@ -1006,7 +1031,7 @@
       ansBox.style.display = 'none';
       podiumBox.style.display = 'block';
       document.getElementById('game-status-label').innerText = "Session Terminée";
-      document.getElementById('animator-controls-step').style.display = 'none';
+      dynamicBtn.style.display = 'none';
 
       if (entries.length > 0) {
         const topScore = entries[0][1].balance;
@@ -1042,6 +1067,7 @@
       return;
     }
 
+    dynamicBtn.style.display = 'block';
     podiumBox.style.display = 'none';
     themeTitle.style.display = 'block';
     radar.style.display = 'flex';
@@ -1053,9 +1079,6 @@
         instruction.style.display = 'block';
         instruction.innerText = sessionData.betTimerDuration > 0 ? `Phase d'enchères (${sessionData.betTimerDuration}s) en cours...` : "Phase d'enchères en cours... Évaluez votre confiance !";
         ansBox.style.display = 'none';
-        document.getElementById('animator-controls-step').style.display = 'flex';
-        document.getElementById('btn-reveal-question').style.display = 'block';
-        document.getElementById('btn-reveal-correct').style.display = 'none';
 
         if (sessionData.betTimerDuration > 0 && lastStartedBetQ !== qIdx) {
           lastStartedBetQ = qIdx;
@@ -1068,9 +1091,6 @@
         themeTitle.innerText = q.text;
         instruction.style.display = 'none';
         ansBox.style.display = 'block';
-        
-        document.getElementById('btn-reveal-question').style.display = 'none';
-        document.getElementById('btn-reveal-correct').style.display = 'block';
 
         const showCorrect = sessionData.showCorrectAnswer === true;
         const letters = ['A', 'B', 'C', 'D'];
@@ -1104,11 +1124,15 @@
 
   function addBet(amount) {
     const input = document.getElementById('bet-amount-input');
-    const balance = sessionData.joueurs[playerId].balance;
+    const balance = (sessionData.joueurs && sessionData.joueurs[playerId]) ? sessionData.joueurs[playerId].balance : (parseInt(input.value) || 1000);
     let current = parseInt(input.value) || 0;
 
-    if (amount === 'all') current = balance;
-    else current = Math.min(balance, Math.max(0, current + amount));
+    if (amount === 'all') {
+      const isInsured = document.getElementById('insurance-checkbox').checked;
+      current = isInsured ? Math.round(balance / 1.20) : balance;
+    } else {
+      current = Math.min(balance, Math.max(0, current + amount));
+    }
     input.value = current;
     updateInsuranceLabel();
   }
@@ -1121,12 +1145,21 @@
 
   function toggleInsurance() {
     insuranceSelected = document.getElementById('insurance-checkbox').checked;
+    const balance = (sessionData.joueurs && sessionData.joueurs[playerId]) ? sessionData.joueurs[playerId].balance : 0;
+    const input = document.getElementById('bet-amount-input');
+    const currentVal = parseInt(input.value) || 0;
+    
+    if (currentVal > 0 && balance > 0 && (currentVal === balance || currentVal === Math.round(balance / 1.20) || currentVal === Math.round(balance * 0.80))) {
+      input.value = insuranceSelected ? Math.round(balance / 1.20) : balance;
+      updateInsuranceLabel();
+    }
   }
 
   function submitBet(isTimeout) {
     if (timerInterval) clearInterval(timerInterval);
     
-    const balance = sessionData.joueurs[playerId].balance;
+    const playerRef = sessionData.joueurs && sessionData.joueurs[playerId];
+    const balance = playerRef ? playerRef.balance : 1000;
     let amount = parseInt(document.getElementById('bet-amount-input').value) || 0;
     
     if (isTimeout || amount <= 0) {
@@ -1141,17 +1174,23 @@
       return;
     }
 
-    amount = Math.min(amount, balance);
-    const insuranceCost = insuranceSelected ? Math.round(amount * 0.20) : 0;
-    const isAllIn = (amount === balance);
+    const isInsured = document.getElementById('insurance-checkbox').checked;
+    const insuranceCost = isInsured ? Math.round(amount * 0.20) : 0;
+    
+    if (amount + insuranceCost > balance) {
+      amount = isInsured ? Math.round(balance / 1.20) : balance;
+    }
+    
+    const finalInsuranceCost = isInsured ? Math.round(amount * 0.20) : 0;
+    const isAllIn = (amount + finalInsuranceCost >= balance);
 
     db.ref(`bourse/${currentSessionId}/joueurs/${playerId}`).update({
-      balance: balance - insuranceCost,
+      balance: balance - (amount + finalInsuranceCost),
       bet: amount,
-      insurance: insuranceSelected,
+      insurance: isInsured,
       hasBet: true,
       passedTurn: false,
-      lastDelta: insuranceCost > 0 ? -insuranceCost : 0,
+      lastDelta: -(amount + finalInsuranceCost),
       isAllIn: isAllIn,
       lastAnswerCorrect: false
     });
@@ -1236,22 +1275,22 @@
     let delta = 0;
     if (chosenIdx !== -1) {
       if (isCorrect) {
-        delta = bet;
+        delta = bet * 2;
       } else {
-        let loss = player.insurance ? Math.round(bet * 0.5) : bet;
-        delta = -loss;
+        let refund = player.insurance ? Math.round(bet * 0.5) : 0;
+        delta = refund;
       }
     } else {
-      let loss = player.insurance ? Math.round(bet * 0.5) : bet;
-      delta = -loss;
+      let refund = player.insurance ? Math.round(bet * 0.5) : 0;
+      delta = refund;
     }
 
-    let newBalance = Math.max(0, player.balance + delta);
+    let newBalance = player.balance + delta;
 
     db.ref(`bourse/${currentSessionId}/joueurs/${playerId}`).update({
       balance: newBalance,
       hasAnswered: true,
-      lastDelta: delta,
+      lastDelta: delta - bet,
       lastAnswerCorrect: isCorrect
     });
 
@@ -1263,16 +1302,16 @@
       triggerScreenShake();
       feedbackTitle.innerHTML = "⏰ TEMPS ÉCOULÉ !";
       feedbackTitle.style.color = "var(--danger)";
-      feedbackText.innerHTML = `Aucune réponse sélectionnée. Perte : <strong>${delta} pts</strong>.<br>Nouveau capital : <strong>${newBalance} pts</strong>`;
+      feedbackText.innerHTML = `Aucune réponse sélectionnée. ${player.insurance ? 'Assurance active (remboursement 50%).' : 'Mise perdue.'}`;
     } else if (isCorrect) {
       feedbackTitle.innerHTML = "🎉 EXCELLENT !";
       feedbackTitle.style.color = "var(--success)";
-      feedbackText.innerHTML = `Bravo ! Vous remportez <strong>+${delta} pts</strong>.<br>Nouveau capital : <strong>${newBalance} pts</strong>`;
+      feedbackText.innerHTML = `Bravo ! Vous remportez <strong>+${bet} pts</strong> de bénéfice.`;
     } else {
       triggerScreenShake();
       feedbackTitle.innerHTML = "💥 PERDU !";
       feedbackTitle.style.color = "var(--danger)";
-      feedbackText.innerHTML = `Mauvaise réponse. Perte : <strong>${delta} pts</strong> ${player.insurance ? '(Assurance active -50%)' : ''}.<br>Nouveau capital : <strong>${newBalance} pts</strong>`;
+      feedbackText.innerHTML = `Mauvaise réponse. ${player.insurance ? 'Assurance active : récupération de 50% de la mise.' : 'Mise perdue.'}`;
     }
 
     document.getElementById('player-question-section').style.display = 'none';
@@ -1300,7 +1339,7 @@
       qSec.style.display = 'none';
       feedSec.style.display = 'block';
       document.getElementById('player-feedback-title').innerHTML = "🏆 Fin de Partie !";
-      document.getElementById('player-feedback-text').innerHTML = `Consultez l'écran principal pour découvrir le podium complet !<br>Votre score final : <strong>${player.balance} pts</strong>`;
+      document.getElementById('player-feedback-text').innerHTML = `Consultez l'écran principal pour découvrir le podium complet !`;
       return;
     }
 
@@ -1348,13 +1387,14 @@
         insuranceSelected = false;
         updateInsuranceLabel();
 
-        if (sessionData.betTimerDuration > 0) {
+        if (sessionData.betTimerDuration > 0 && lastStartedBetQ !== qIdx) {
+          lastStartedBetQ = qIdx;
           startTimer(sessionData.betTimerDuration, () => {
             if (!player.hasBet) {
               submitBet(true);
             }
           });
-        } else {
+        } else if (!sessionData.betTimerDuration || sessionData.betTimerDuration <= 0) {
           startTimer(0, null);
         }
       }
@@ -1387,11 +1427,12 @@
 
         renderPlayerOptions(q);
 
-        if (sessionData.ansTimerDuration > 0) {
+        if (sessionData.ansTimerDuration > 0 && lastStartedAnsQ !== qIdx) {
+          lastStartedAnsQ = qIdx;
           startTimer(sessionData.ansTimerDuration, () => {
             if (!player.hasAnswered) submitPlayerAnswer(-1);
           });
-        } else {
+        } else if (!sessionData.ansTimerDuration || sessionData.ansTimerDuration <= 0) {
           startTimer(0, null);
         }
       }
