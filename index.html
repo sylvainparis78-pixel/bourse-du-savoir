@@ -73,7 +73,7 @@
     .btn-danger { background-color: var(--danger); color: white; }
     .btn-info { background-color: #17a2b8; color: white; }
     .btn-success { background-color: var(--success); color: white; }
-    .btn-small { padding: 8px 12px; font-size: 0.85rem; width: auto; margin: 0; }
+    .btn-small { padding: 8px 14px; font-size: 0.85rem; width: auto; margin: 0; border-radius: 8px; font-weight: 600; }
 
     .btn-answer-mobile {
       background-color: #f0f4f8;
@@ -216,6 +216,7 @@
 
     .gain-badge { background: #d4edda; color: #155724; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
     .loss-badge { background: #f8d7da; color: #721c24; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+    .neutral-badge { background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
 
     .game-screen-main {
       background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
@@ -457,9 +458,8 @@
         </div>
 
         <div>
-          <!-- BOUTON D'ACTION UNIQUE FUSIONNÉ -->
           <button id="btn-dynamic-flow" class="btn btn-warning" onclick="animatorMainAction()">🚀 Lancer la Question</button>
-          <button class="btn btn-success btn-small" style="margin-top:4px;" onclick="animatorRefillBalances()">💉 Recharger chaque équipe (+100 pts)</button>
+          <button class="btn btn-success btn-small" style="margin-top:4px; width:100%; padding:14px; font-size:1rem;" onclick="animatorRefillBalances()">💉 RECHARGE 100 pts</button>
         </div>
       </div>
 
@@ -551,7 +551,7 @@
           <strong style="font-size:0.85rem; color:var(--primary);">🧩 Joker 50/50</strong>
           <div style="font-size:0.75rem; color:#555;">Coût : 50% de la mise (<span id="joker-cost-display">0</span> pts)</div>
         </div>
-        <button id="btn-joker-5050" class="btn btn-info btn-small" onclick="useJoker5050()">Utiliser</button>
+        <button id="btn-joker-5050" class="btn btn-info btn-small" style="padding:6px 10px; font-size:0.75rem;" onclick="useJoker5050()">Utiliser</button>
       </div>
 
       <p id="player-q-text" style="font-size:1rem; font-weight:600; margin:8px 0 14px 0;"></p>
@@ -755,30 +755,24 @@
     qTimer.innerText = txt;
   }
 
-  // FONCTION D'ACTION PRINCIPALE FUSIONNÉE
   function animatorMainAction() {
     const qIdx = sessionData.currentQuestion === undefined ? -1 : sessionData.currentQuestion;
     const status = sessionData.status || 'waiting';
 
-    // 1. Si on est en attente du début de la partie
     if (qIdx === -1 || status === 'waiting') {
       startNextQuestion(0);
       return;
     }
 
-    // 2. Si on est en phase de pari -> on révèle la question
     if (status === 'betting') {
       animatorRevealAnswers();
       return;
     }
 
-    // 3. Si on est en phase de réponse
     if (status === 'answering') {
-      // Si la bonne réponse n'est pas encore affichée -> on l'affiche
       if (!sessionData.showCorrectAnswer) {
         animatorShowCorrectAnswer();
       } else {
-        // Si la bonne réponse est déjà affichée -> on passe à la question suivante (ou fin de partie)
         if (qIdx + 1 >= QUESTIONS.length) {
           animatorFinishGame();
         } else {
@@ -925,14 +919,23 @@
     document.getElementById('animator-count-players').innerText = entries.length;
 
     let totalPot = 0;
+    let allInCount = 0;
 
     entries.forEach(([_, j]) => {
       if (j.bet) totalPot += j.bet;
       
-      if (sessionData.status === 'betting' && j.isAllIn) {
-        triggerAllInBanner();
+      // On compte uniquement les joueurs qui ont validé leur pari pour CETTE question et qui sont en ALL-IN
+      if (sessionData.status === 'betting' && j.hasBet === true && j.isAllIn === true) {
+        allInCount++;
       }
     });
+
+    // Le bandeau s'affiche uniquement s'il y a au moins un ALL-IN actif validé pendant les enchères
+    if (sessionData.status === 'betting' && allInCount > 0) {
+      triggerAllInBanner();
+    } else {
+      hideAllInBanner();
+    }
 
     document.getElementById('animator-pot-display').innerText = `💼 Cagnotte Globale : ${totalPot} pts`;
 
@@ -940,7 +943,7 @@
     radar.innerHTML = entries.map(([_, j]) => {
       let isReady = j.hasBet || j.hasAnswered;
       let text = j.passedTurn ? `${j.name} (Passé)` : (isReady ? `${j.name} (Prêt ✓)` : `${j.name} (...)`);
-      if (j.isAllIn) text += " 🔥 ALL-IN";
+      if (j.isAllIn && j.hasBet) text += " 🔥 ALL-IN";
       return `<div class="radar-pill ${isReady ? 'ready' : ''}">👥 ${text}</div>`;
     }).join('');
 
@@ -956,7 +959,7 @@
 
       let statusIcon = "⏳ En cours...";
       if (j.passedTurn) statusIcon = "⛔ Tour passé";
-      else if (j.hasBet) statusIcon = j.isAllIn ? "🔥 All-in !" : "🔒 Parié";
+      else if (j.hasBet) statusIcon = (j.isAllIn ? "🔥 All-in !" : "🔒 Parié");
       
       if (sessionData.status === 'answering') {
         if (j.passedTurn) statusIcon = "⛔ Tour passé";
@@ -965,12 +968,21 @@
 
       let animClass = "";
       let badgeHtml = "";
-      if (j.lastDelta > 0) {
-        badgeHtml = `<span class="gain-badge">+${j.lastDelta} pts</span>`;
-        animClass = "row-gain-anim";
-      } else if (j.lastDelta < 0) {
-        badgeHtml = `<span class="loss-badge">${j.lastDelta} pts</span>`;
-        animClass = "row-loss-anim";
+
+      if (sessionData.status === 'betting') {
+        if (j.hasBet && !j.passedTurn) {
+          badgeHtml = `<span class="neutral-badge">🔒 Parié (${j.bet} pts)</span>`;
+        } else if (j.passedTurn) {
+          badgeHtml = `<span class="neutral-badge">Passé</span>`;
+        }
+      } else if (sessionData.status === 'answering' || sessionData.status === 'finished') {
+        if (j.lastDelta > 0) {
+          badgeHtml = `<span class="gain-badge">+${j.lastDelta} pts</span>`;
+          animClass = "row-gain-anim";
+        } else if (j.lastDelta < 0) {
+          badgeHtml = `<span class="loss-badge">${j.lastDelta} pts</span>`;
+          animClass = "row-loss-anim";
+        }
       }
 
       return `
@@ -1001,7 +1013,6 @@
     const ansBox = document.getElementById('animator-answers-box');
     const podiumBox = document.getElementById('animator-podium-box');
 
-    // MISE À JOUR DYNAMIQUE DU BOUTON UNIQUE
     const dynamicBtn = document.getElementById('btn-dynamic-flow');
     const status = sessionData.status;
 
