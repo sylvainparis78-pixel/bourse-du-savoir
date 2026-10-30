@@ -66,7 +66,7 @@
     .card { background-color: #f9fbfd; border: 1px solid var(--gray); border-left: 4px solid var(--primary); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
     .form-group { margin-bottom: 10px; }
     label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; }
-    input[type="text"], input[type="file"], input[type="number"] { width: 100%; padding: 8px 10px; border: 1px solid var(--gray); border-radius: 8px; font-size: 0.9rem; outline: none; background: white; }
+    input[type="text"], input[type="file"], input[type="number"], select { width: 100%; padding: 8px 10px; border: 1px solid var(--gray); border-radius: 8px; font-size: 0.9rem; outline: none; background: white; }
 
     .btn { width: 100%; padding: 14px; background-color: var(--primary); color: var(--white); border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-bottom: 8px; }
     .btn:hover { opacity: 0.9; }
@@ -354,6 +354,7 @@
       height: 270px;
       margin-top: 15px;
       z-index: 2;
+      position: relative;
     }
 
     .neon-step {
@@ -402,6 +403,29 @@
     @keyframes neonPulseGlow {
       from { box-shadow: 0 0 25px rgba(255, 152, 0, 0.4); border-color: #ff9800; }
       to { box-shadow: 0 0 45px rgba(255, 152, 0, 0.9); border-color: #ffc107; }
+    }
+
+    /* ONDE DE CHOC LUMINEUSE (GOLDEN SPARK) */
+    .golden-shockwave {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,193,7,0.8) 0%, rgba(255,152,0,0.4) 50%, transparent 80%);
+      border: 4px solid var(--gold);
+      box-shadow: 0 0 40px var(--accent), inset 0 0 30px var(--gold);
+      transform: translate(-50%, -50%) scale(0);
+      pointer-events: none;
+      z-index: 1;
+      animation: shockwaveExpand 1.2s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+    }
+
+    @keyframes shockwaveExpand {
+      0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+      70% { opacity: 0.8; }
+      100% { transform: translate(-50%, -50%) scale(120); opacity: 0; }
     }
 
     .neon-step .medal-icon { font-size: 2.2rem; margin-bottom: 6px; }
@@ -491,6 +515,14 @@
             </div>
           </div>
 
+          <!-- OPTION CONFIGURATION DES PARIS TACTIQUES -->
+          <div style="background:#fff3cd; border:1px solid #ffeeba; border-radius:8px; padding:8px; margin:8px 0;">
+            <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer; font-size:0.8rem; font-weight:bold; color:#856404;">
+              <input type="checkbox" id="animator-enable-sidebets" onchange="toggleSideBetsOption(this.checked)">
+              🎯 Activer les Paris Tactiques (100 pts)
+            </label>
+          </div>
+
           <div style="margin: 6px 0;">
             <strong>Équipes (<span id="animator-count-players">0</span>/8) :</strong>
             <div id="animator-teams-board" class="bourse-table">En attente...</div>
@@ -576,6 +608,21 @@
           <input type="checkbox" id="insurance-checkbox" onchange="toggleInsurance()"> 
           🛡️ Assurance (20% = <span id="insurance-cost-preview">0</span> pts) : Limite la perte à 50% si erreur
         </label>
+      </div>
+
+      <!-- SECTION PARI TACTIQUE SUR SPHONE (CONDITIONNELLE) -->
+      <div id="player-sidebet-container" style="display:none; background:#e8f4fd; border:1px solid #90caf9; border-radius:8px; padding:10px; margin-bottom:10px;">
+        <strong style="font-size:0.85rem; color:var(--primary);">🎯 Pari Tactique (100 pts) :</strong>
+        <div style="font-size:0.75rem; color:#555; margin-bottom:6px;">Pariez sur la réussite ou l'échec d'un adversaire.</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+          <select id="side-bet-target" style="padding:6px; font-size:0.8rem;">
+            <option value="">-- Cible --</option>
+          </select>
+          <select id="side-bet-prediction" style="padding:6px; font-size:0.8rem;">
+            <option value="success">Succès 🟢</option>
+            <option value="failure">Échec 🔴</option>
+          </select>
+        </div>
       </div>
 
       <button id="btn-validate-bet" class="btn btn-warning" onclick="submitBet(false)">Valider ma mise ➔</button>
@@ -696,6 +743,7 @@
       betTimerDuration: 0,
       ansTimerDuration: 0,
       allInShownThisQuestion: false,
+      enableSideBets: false,
       joueurs: {}
     }).then(() => {
       listenToSession();
@@ -742,11 +790,14 @@
           bet: 0,
           hasBet: false,
           hasAnswered: false,
+          chosenAnswer: -1,
           insurance: false,
           passedTurn: false,
           lastDelta: 0,
           isAllIn: false,
-          lastAnswerCorrect: false
+          lastAnswerCorrect: false,
+          sideBetTarget: "",
+          sideBetPrediction: "success"
         };
       }
       return joueurs;
@@ -765,6 +816,11 @@
       if (isAnimator) updateAnimatorUI();
       else updatePlayerUI();
     });
+  }
+
+  function toggleSideBetsOption(enabled) {
+    if (!currentSessionId) return;
+    db.ref(`bourse/${currentSessionId}`).update({ enableSideBets: enabled });
   }
 
   function startTimer(seconds, onExpire) {
@@ -853,11 +909,14 @@
         updates[`joueurs/${pKey}/hasBet`] = false;
         updates[`joueurs/${pKey}/bet`] = 0;
         updates[`joueurs/${pKey}/hasAnswered`] = false;
+        updates[`joueurs/${pKey}/chosenAnswer`] = -1;
         updates[`joueurs/${pKey}/insurance`] = false;
         updates[`joueurs/${pKey}/passedTurn`] = false;
         updates[`joueurs/${pKey}/lastDelta`] = 0;
         updates[`joueurs/${pKey}/isAllIn`] = false;
         updates[`joueurs/${pKey}/lastAnswerCorrect`] = false;
+        updates[`joueurs/${pKey}/sideBetTarget`] = "";
+        updates[`joueurs/${pKey}/sideBetPrediction`] = "success";
       });
       
       db.ref(`bourse/${currentSessionId}`).update(updates);
@@ -872,8 +931,71 @@
     });
   }
 
+  /* CALCULS ENTIÈREMENT CENTRALISÉS CÔTÉ ANIMATEUR */
   function animatorShowCorrectAnswer() {
-    db.ref(`bourse/${currentSessionId}`).update({ showCorrectAnswer: true });
+    const qIdx = sessionData.currentQuestion;
+    const currentQ = QUESTIONS[qIdx];
+    const correctOption = currentQ ? currentQ.correct : -1;
+
+    db.ref(`bourse/${currentSessionId}`).transaction(session => {
+      if (!session || !session.joueurs) return session;
+
+      const joueurs = session.joueurs;
+      session.showCorrectAnswer = true;
+
+      // ÉTAPE 1 : Évaluation des réponses principales et mise à jour initiale du capital
+      Object.keys(joueurs).forEach(pKey => {
+        const j = joueurs[pKey];
+        
+        if (j.passedTurn) {
+          j.lastAnswerCorrect = false;
+          j.lastDelta = 0;
+          return;
+        }
+
+        const isCorrect = (j.chosenAnswer !== -1 && j.chosenAnswer === correctOption);
+        j.lastAnswerCorrect = isCorrect;
+        const bet = j.bet || 0;
+
+        if (isCorrect) {
+          const gain = bet * 2;
+          j.balance = (j.balance || 0) + gain;
+          j.lastDelta = gain - bet; // Gain net
+        } else {
+          const refund = j.insurance ? Math.round(bet * 0.5) : 0;
+          j.balance = (j.balance || 0) + refund;
+          j.lastDelta = refund - bet; // Perte nette
+        }
+      });
+
+      // ÉTAPE 2 : Évaluation des Paris Tactiques (si activés par l'animateur)
+      if (session.enableSideBets) {
+        Object.keys(joueurs).forEach(pKey => {
+          const j = joueurs[pKey];
+
+          if (j.sideBetTarget && joueurs[j.sideBetTarget] && !j.passedTurn) {
+            const target = joueurs[j.sideBetTarget];
+            const targetSucceeded = target.lastAnswerCorrect === true;
+            const userPredictedSuccess = (j.sideBetPrediction === 'success');
+
+            if (targetSucceeded === userPredictedSuccess) {
+              // Pari réussi : le parieur gagne 100 pts, la cible perd 100 pts
+              j.balance = (j.balance || 0) + 100;
+              target.balance = Math.max(0, (target.balance || 0) - 100);
+              
+              j.lastDelta = (j.lastDelta || 0) + 100;
+              target.lastDelta = (target.lastDelta || 0) - 100;
+            } else {
+              // Pari raté : le parieur perd 100 pts
+              j.balance = Math.max(0, (j.balance || 0) - 100);
+              j.lastDelta = (j.lastDelta || 0) - 100;
+            }
+          }
+        });
+      }
+
+      return session;
+    });
   }
 
   function animatorFinishGame() {
@@ -956,9 +1078,28 @@
     }
   }
 
+  function triggerShockwave() {
+    const container = document.getElementById('podium-steps-container');
+    if (!container) return;
+
+    const shock = document.createElement('div');
+    shock.className = 'golden-shockwave';
+    container.appendChild(shock);
+
+    setTimeout(() => {
+      shock.remove();
+    }, 1300);
+  }
+
   function updateAnimatorUI() {
     const joueurs = sessionData.joueurs || {};
     
+    // Synchro de la case à cocher côté animateur
+    const sideBetsCheckbox = document.getElementById('animator-enable-sidebets');
+    if (sideBetsCheckbox && document.activeElement !== sideBetsCheckbox) {
+      sideBetsCheckbox.checked = !!sessionData.enableSideBets;
+    }
+
     const entries = Object.entries(joueurs).sort((a, b) => {
       if (b[1].balance !== a[1].balance) {
         return b[1].balance - a[1].balance;
@@ -1084,7 +1225,6 @@
       }
     }
 
-    // RENDU DÉFINITIF DU PODIUM WALL STREET NÉON
     if (sessionData.status === 'finished') {
       themeTitle.style.display = 'none';
       instruction.style.display = 'none';
@@ -1108,7 +1248,6 @@
       const pContainer = document.getElementById('podium-steps-container');
       pContainer.innerHTML = '';
 
-      // Placement exact sur la scène (2ème à gauche, 1er au centre, 3ème à droite)
       const podiumMapping = [
         { rankNum: 2, entryIdx: 1, medal: '🥈', classRank: 'neon-rank-2' },
         { rankNum: 1, entryIdx: 0, medal: '🥇', classRank: 'neon-rank-1' },
@@ -1128,6 +1267,10 @@
           pContainer.appendChild(stepDiv);
         }
       });
+
+      setTimeout(() => {
+        triggerShockwave();
+      }, 800);
 
       triggerConfetti();
       return;
@@ -1221,6 +1364,26 @@
     }
   }
 
+  function updateSideBetTargetsDropdown() {
+    const select = document.getElementById('side-bet-target');
+    if (!select) return;
+    
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">-- Cible --</option>';
+
+    if (sessionData.joueurs) {
+      Object.entries(sessionData.joueurs).forEach(([pKey, pData]) => {
+        if (pKey !== playerId) {
+          const opt = document.createElement('option');
+          opt.value = pKey;
+          opt.innerText = pData.name;
+          select.appendChild(opt);
+        }
+      });
+    }
+    select.value = currentVal;
+  }
+
   function submitBet(isTimeout) {
     if (timerInterval) clearInterval(timerInterval);
     
@@ -1228,6 +1391,12 @@
     const balance = playerRef ? playerRef.balance : 1000;
     let amount = parseInt(document.getElementById('bet-amount-input').value) || 0;
     
+    const sideBetContainer = document.getElementById('player-sidebet-container');
+    const targetId = document.getElementById('side-bet-target').value;
+    const prediction = document.getElementById('side-bet-prediction').value;
+    const isSideBetActive = sessionData.enableSideBets && sideBetContainer.style.display !== 'none';
+    const hasSideBet = isSideBetActive && targetId && balance >= 100;
+
     if (isTimeout || amount <= 0) {
       db.ref(`bourse/${currentSessionId}/joueurs/${playerId}`).update({
         bet: 0,
@@ -1235,7 +1404,9 @@
         hasBet: true,
         passedTurn: true,
         isAllIn: false,
-        lastAnswerCorrect: false
+        lastAnswerCorrect: false,
+        sideBetTarget: "",
+        sideBetPrediction: "success"
       });
       return;
     }
@@ -1258,7 +1429,9 @@
       passedTurn: false,
       lastDelta: -(amount + finalInsuranceCost),
       isAllIn: isAllIn,
-      lastAnswerCorrect: false
+      lastAnswerCorrect: false,
+      sideBetTarget: hasSideBet ? targetId : "",
+      sideBetPrediction: hasSideBet ? prediction : "success"
     });
   }
 
@@ -1326,59 +1499,25 @@
     document.getElementById('btn-joker-5050').disabled = isJokerUsedThisRound;
   }
 
+  /* TRANSMISSION DU CHOIX AU SERVEUR (SANS CALCUL EN LOCAL) */
   function submitPlayerAnswer(chosenIdx) {
     if (timerInterval) clearInterval(timerInterval);
 
-    const qIdx = sessionData.currentQuestion;
-    const q = QUESTIONS[qIdx];
     const player = sessionData.joueurs[playerId];
-
     if (player.hasAnswered || player.passedTurn) return;
 
-    const isCorrect = (chosenIdx !== -1 && chosenIdx === q.correct);
-    const bet = player.bet || 0;
-    
-    let delta = 0;
-    if (chosenIdx !== -1) {
-      if (isCorrect) {
-        delta = bet * 2;
-      } else {
-        let refund = player.insurance ? Math.round(bet * 0.5) : 0;
-        delta = refund;
-      }
-    } else {
-      let refund = player.insurance ? Math.round(bet * 0.5) : 0;
-      delta = refund;
-    }
-
-    let newBalance = player.balance + delta;
-
     db.ref(`bourse/${currentSessionId}/joueurs/${playerId}`).update({
-      balance: newBalance,
-      hasAnswered: true,
-      lastDelta: delta - bet,
-      lastAnswerCorrect: isCorrect
+      chosenAnswer: chosenIdx,
+      hasAnswered: true
     });
 
     const feedbackSection = document.getElementById('player-feedback-section');
     const feedbackTitle = document.getElementById('player-feedback-title');
     const feedbackText = document.getElementById('player-feedback-text');
 
-    if (chosenIdx === -1) {
-      triggerScreenShake();
-      feedbackTitle.innerHTML = "⏰ TEMPS ÉCOULÉ !";
-      feedbackTitle.style.color = "var(--danger)";
-      feedbackText.innerHTML = `Aucune réponse sélectionnée. ${player.insurance ? 'Assurance active (remboursement 50%).' : 'Mise perdue.'}`;
-    } else if (isCorrect) {
-      feedbackTitle.innerHTML = "🎉 EXCELLENT !";
-      feedbackTitle.style.color = "var(--success)";
-      feedbackText.innerHTML = `Bravo ! Vous remportez <strong>+${bet} pts</strong> de bénéfice.`;
-    } else {
-      triggerScreenShake();
-      feedbackTitle.innerHTML = "💥 PERDU !";
-      feedbackTitle.style.color = "var(--danger)";
-      feedbackText.innerHTML = `Mauvaise réponse. ${player.insurance ? 'Assurance active : récupération de 50% de la mise.' : 'Mise perdue.'}`;
-    }
+    feedbackTitle.innerHTML = "🔒 RÉPONSE ENREGISTRÉE";
+    feedbackTitle.style.color = "var(--primary)";
+    feedbackText.innerHTML = "En attente de la résolution par l'animateur...";
 
     document.getElementById('player-question-section').style.display = 'none';
     feedbackSection.style.display = 'block';
@@ -1395,9 +1534,17 @@
     const waitSec = document.getElementById('player-wait-question');
     const qSec = document.getElementById('player-question-section');
     const feedSec = document.getElementById('player-feedback-section');
+    const sideBetContainer = document.getElementById('player-sidebet-container');
 
     const status = sessionData.status;
     const qIdx = sessionData.currentQuestion;
+
+    // Affichage conditionnel de l'option Pari Tactique sur mobile
+    if (sessionData.enableSideBets) {
+      sideBetContainer.style.display = 'block';
+    } else {
+      sideBetContainer.style.display = 'none';
+    }
 
     if (status === 'finished') {
       betSec.style.display = 'none';
@@ -1452,6 +1599,7 @@
         document.getElementById('insurance-checkbox').checked = false;
         insuranceSelected = false;
         updateInsuranceLabel();
+        updateSideBetTargetsDropdown();
 
         if (sessionData.betTimerDuration > 0 && lastStartedBetQ !== qIdx) {
           lastStartedBetQ = qIdx;
@@ -1481,6 +1629,22 @@
       if (player.hasAnswered) {
         qSec.style.display = 'none';
         feedSec.style.display = 'block';
+
+        const feedbackTitle = document.getElementById('player-feedback-title');
+        const feedbackText = document.getElementById('player-feedback-text');
+
+        if (sessionData.showCorrectAnswer) {
+          if (player.lastAnswerCorrect) {
+            feedbackTitle.innerHTML = "🎉 EXCELLENT !";
+            feedbackTitle.style.color = "var(--success)";
+            feedbackText.innerHTML = `Bénéfice : <strong>+${player.lastDelta} pts</strong>.`;
+          } else {
+            triggerScreenShake();
+            feedbackTitle.innerHTML = "💥 PERDU !";
+            feedbackTitle.style.color = "var(--danger)";
+            feedbackText.innerHTML = `Variation : <strong>${player.lastDelta} pts</strong>.`;
+          }
+        }
       } else {
         feedSec.style.display = 'none';
         qSec.style.display = 'block';
